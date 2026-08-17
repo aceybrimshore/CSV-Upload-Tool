@@ -4,8 +4,15 @@ import path from 'path';
 import {defineConfig} from 'vite';
 
 export default defineConfig(({ mode }) => {
+  // If running in GitHub Actions or production, configure base path for GitHub Pages repo
+  const repoBase = process.env.GITHUB_REPOSITORY
+    ? `/${process.env.GITHUB_REPOSITORY.split('/')[1]}/`
+    : (process.env.BASE_PATH || '/CSV-Upload-Tool/');
+
+  const base = mode === 'development' ? '/' : repoBase;
+
   return {
-    base: mode === 'production' ? './' : '/',
+    base,
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {

@@ -1,0 +1,6 @@
+{
+  "name": "Part Number CSV Exporter",
+  "description": "Bulk part number lookup and NetSuite-compatible CSV exporter with customizable subsidiary, location, dates, quantity, and memo fields.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

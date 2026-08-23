@@ -38,3 +38,36 @@ export interface ExporterConfig {
   delimiter: 'comma' | 'tab';
   includeHeader: boolean;
 }
+
+export interface LocationPreset {
+  id: string;
+  name: string;
+  subsidiary_id: string;
+  location: string;
+  description?: string;
+}
+
+export const LOCATION_PRESETS: LocationPreset[] = [
+  {
+    id: 'sydney',
+    name: 'Sydney',
+    subsidiary_id: '7',
+    location: '25',
+    description: 'Sub: 7 | Loc: 25'
+  },
+  {
+    id: 'syd-maxtrax',
+    name: 'Syd - Maxtrax',
+    subsidiary_id: '23',
+    location: '95',
+    description: 'Sub: 23 | Loc: 95'
+  },
+  {
+    id: 'syd-tred',
+    name: 'Syd - Tred',
+    subsidiary_id: '25',
+    location: '94',
+    description: 'Sub: 25 | Loc: 94'
+  }
+];
+

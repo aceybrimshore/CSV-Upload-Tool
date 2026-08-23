@@ -1,17 +1,15 @@
-import { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { ExportRow } from '../types';
 import {
   Search,
   AlertTriangle,
   CheckCircle2,
-  HelpCircle,
   Edit3,
   Check,
-  X,
-  FileDown,
-  Copy,
-  Hash,
-  Layers
+  Layers,
+  RotateCcw,
+  SlidersHorizontal,
+  GripVertical
 } from 'lucide-react';
 
 interface Props {
@@ -20,10 +18,137 @@ interface Props {
   onRemoveRow: (id: string) => void;
 }
 
-export function CsvTablePreview({ rows, onUpdateRow, onRemoveRow }: Props) {
+export interface ColumnDef {
+  key: string;
+  label: string;
+  defaultWidth: number;
+  minWidth: number;
+  headerClassName?: string;
+  align?: 'left' | 'center' | 'right';
+  tooltip?: string;
+}
+
+export const TABLE_COLUMNS: ColumnDef[] = [
+  { key: 'index', label: '#', defaultWidth: 46, minWidth: 38, align: 'center' },
+  { key: 'inputPart', label: 'Input Part', defaultWidth: 170, minWidth: 100 },
+  { key: 'quantity', label: 'Quantity', defaultWidth: 105, minWidth: 80, headerClassName: 'text-slate-800 bg-slate-100/80' },
+  { key: 'subsidiary_id', label: 'subsidiary_id', defaultWidth: 115, minWidth: 80, headerClassName: 'text-indigo-700 bg-indigo-50/60' },
+  { key: 'item_id', label: 'item_id (Internal ID)', defaultWidth: 175, minWidth: 110, headerClassName: 'text-indigo-700 bg-indigo-50/60' },
+  { key: 'location', label: 'location', defaultWidth: 95, minWidth: 70 },
+  { key: 'start_date', label: 'start_date', defaultWidth: 115, minWidth: 85 },
+  { key: 'end_date', label: 'end_date', defaultWidth: 115, minWidth: 85 },
+  { key: 'memo', label: 'memo', defaultWidth: 210, minWidth: 100 },
+  { key: 'status', label: 'Status', defaultWidth: 110, minWidth: 80, align: 'right' },
+];
+
+const COLUMN_STORAGE_KEY = 'csv_exporter_col_widths_v2';
+
+const getDefaultWidths = (): Record<string, number> => {
+  const map: Record<string, number> = {};
+  TABLE_COLUMNS.forEach(col => {
+    map[col.key] = col.defaultWidth;
+  });
+  return map;
+};
+
+export function CsvTablePreview({ rows, onUpdateRow }: Props) {
   const [searchTerm, setSearchTerm] = useState('');
   const [editingRowId, setEditingRowId] = useState<string | null>(null);
   const [filterStatus, setFilterStatus] = useState<'all' | 'matched' | 'not_found'>('all');
+  const [resizingCol, setResizingCol] = useState<string | null>(null);
+
+  // Column widths with persistent localStorage
+  const [colWidths, setColWidths] = useState<Record<string, number>>(() => {
+    try {
+      const saved = localStorage.getItem(COLUMN_STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        const defaults = getDefaultWidths();
+        return { ...defaults, ...parsed };
+      }
+    } catch (e) {
+      console.warn('Failed to load column widths from localStorage', e);
+    }
+    return getDefaultWidths();
+  });
+
+  // Check if any column width has been changed from default
+  const isWidthsCustomized = useMemo(() => {
+    const defaults = getDefaultWidths();
+    return Object.keys(defaults).some(key => colWidths[key] !== defaults[key]);
+  }, [colWidths]);
+
+  // Handle Drag Resizing of Columns
+  const handleStartResize = (e: React.MouseEvent, colKey: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const startX = e.clientX;
+    const startWidth = colWidths[colKey] || 100;
+    const colDef = TABLE_COLUMNS.find(c => c.key === colKey);
+    const minWidth = colDef?.minWidth || 40;
+
+    setResizingCol(colKey);
+
+    let latestWidth = startWidth;
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      const delta = moveEvent.clientX - startX;
+      const newWidth = Math.max(minWidth, Math.round(startWidth + delta));
+      latestWidth = newWidth;
+
+      setColWidths(prev => ({
+        ...prev,
+        [colKey]: newWidth
+      }));
+    };
+
+    const onMouseUp = () => {
+      setResizingCol(null);
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+
+      setColWidths(prev => {
+        const updated = { ...prev, [colKey]: latestWidth };
+        try {
+          localStorage.setItem(COLUMN_STORAGE_KEY, JSON.stringify(updated));
+        } catch (err) {
+          console.warn('Failed to save column widths to localStorage', err);
+        }
+        return updated;
+      });
+    };
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  };
+
+  // Reset a single column on double-click
+  const handleResetSingleCol = (colKey: string) => {
+    const colDef = TABLE_COLUMNS.find(c => c.key === colKey);
+    if (!colDef) return;
+
+    setColWidths(prev => {
+      const updated = { ...prev, [colKey]: colDef.defaultWidth };
+      try {
+        localStorage.setItem(COLUMN_STORAGE_KEY, JSON.stringify(updated));
+      } catch (err) {
+        console.warn(err);
+      }
+      return updated;
+    });
+  };
+
+  // Reset all column widths to default
+  const handleResetAllWidths = () => {
+    const defaults = getDefaultWidths();
+    setColWidths(defaults);
+    try {
+      localStorage.setItem(COLUMN_STORAGE_KEY, JSON.stringify(defaults));
+    } catch (err) {
+      console.warn(err);
+    }
+  };
 
   const filteredRows = rows.filter(r => {
     if (filterStatus === 'matched' && r.status !== 'matched') return false;
@@ -42,13 +167,17 @@ export function CsvTablePreview({ rows, onUpdateRow, onRemoveRow }: Props) {
   const missingCount = rows.filter(r => r.status === 'not_found').length;
   const totalQty = rows.reduce((acc, curr) => acc + (Number(curr.quantity) || 0), 0);
 
+  const totalTableWidth = useMemo(() => {
+    return TABLE_COLUMNS.reduce((sum, col) => sum + (colWidths[col.key] || col.defaultWidth), 0);
+  }, [colWidths]);
+
   return (
-    <div className="flex-1 bg-white rounded-lg border border-slate-200 shadow-sm flex flex-col min-h-0 overflow-hidden">
+    <div className="flex-1 bg-white rounded-lg border border-slate-200 shadow-sm flex flex-col min-h-0 overflow-hidden select-none">
       {/* Header Bar */}
-      <div className="px-5 py-3.5 border-b border-slate-200 bg-slate-50/70 flex flex-wrap items-center justify-between gap-3">
+      <div className="px-5 py-3 border-b border-slate-200 bg-slate-50/80 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <h2 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-            CSV Preview (Auto-Generated)
+          <h2 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+            <span>CSV Preview (Auto-Generated)</span>
           </h2>
           <span className="text-[11px] font-semibold bg-white border border-slate-200 text-slate-600 px-2 py-0.5 rounded shadow-2xs">
             {rows.length} {rows.length === 1 ? 'record' : 'records'}
@@ -61,8 +190,21 @@ export function CsvTablePreview({ rows, onUpdateRow, onRemoveRow }: Props) {
           )}
         </div>
 
-        {/* Filter controls */}
-        <div className="flex items-center gap-2.5">
+        {/* Filter & Column controls */}
+        <div className="flex items-center gap-2.5 flex-wrap">
+          {/* Reset column width button */}
+          {isWidthsCustomized && (
+            <button
+              type="button"
+              onClick={handleResetAllWidths}
+              title="Reset all column widths to defaults"
+              className="text-[11px] font-medium text-slate-500 hover:text-indigo-600 bg-white hover:bg-indigo-50/60 border border-slate-200 hover:border-indigo-200 px-2 py-1 rounded flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+            >
+              <RotateCcw className="w-3 h-3" />
+              <span>Reset Column Widths</span>
+            </button>
+          )}
+
           <div className="relative">
             <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
             <input
@@ -70,7 +212,7 @@ export function CsvTablePreview({ rows, onUpdateRow, onRemoveRow }: Props) {
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
               placeholder="Search table..."
-              className="pl-8 pr-2.5 py-1 text-xs bg-white border border-slate-200 rounded-md text-slate-700 placeholder:text-slate-400 focus:ring-1 focus:ring-indigo-500 outline-none w-36 sm:w-48"
+              className="pl-8 pr-2.5 py-1 text-xs bg-white border border-slate-200 rounded-md text-slate-700 placeholder:text-slate-400 focus:ring-1 focus:ring-indigo-500 outline-none w-36 sm:w-44 select-text"
             />
           </div>
 
@@ -103,7 +245,7 @@ export function CsvTablePreview({ rows, onUpdateRow, onRemoveRow }: Props) {
       </div>
 
       {/* Table Container */}
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto select-text">
         {rows.length === 0 ? (
           <div className="h-full min-h-[300px] flex flex-col items-center justify-center p-8 text-center text-slate-400">
             <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mb-3 text-slate-400">
@@ -120,21 +262,62 @@ export function CsvTablePreview({ rows, onUpdateRow, onRemoveRow }: Props) {
             <p className="text-xs text-slate-400 mt-1">Try clearing your search query or filter.</p>
           </div>
         ) : (
-          <table className="w-full text-left border-collapse">
+          <table
+            className="border-collapse text-left"
+            style={{
+              width: '100%',
+              minWidth: `${totalTableWidth}px`,
+              tableLayout: 'fixed'
+            }}
+          >
+            <colgroup>
+              {TABLE_COLUMNS.map(col => (
+                <col
+                  key={col.key}
+                  style={{ width: `${colWidths[col.key] || col.defaultWidth}px` }}
+                />
+              ))}
+            </colgroup>
+
             <thead className="sticky top-0 bg-slate-50 border-b border-slate-200 z-10 shadow-2xs">
               <tr className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                <th className="px-3 py-2.5 w-10 text-center">#</th>
-                <th className="px-3 py-2.5">Input Part</th>
-                <th className="px-3 py-2.5 font-bold text-slate-800 bg-slate-100/70">Quantity</th>
-                <th className="px-3 py-2.5 font-bold text-indigo-700 bg-indigo-50/50">subsidiary_id</th>
-                <th className="px-3 py-2.5 font-bold text-indigo-700 bg-indigo-50/50">item_id (Internal ID)</th>
-                <th className="px-3 py-2.5">location</th>
-                <th className="px-3 py-2.5">start_date</th>
-                <th className="px-3 py-2.5">end_date</th>
-                <th className="px-3 py-2.5">memo</th>
-                <th className="px-3 py-2.5 text-right">Status</th>
+                {TABLE_COLUMNS.map(col => {
+                  const isResizingThis = resizingCol === col.key;
+
+                  return (
+                    <th
+                      key={col.key}
+                      className={`relative px-3 py-2.5 group select-none ${col.align === 'center' ? 'text-center' : col.align === 'right' ? 'text-right' : 'text-left'} ${col.headerClassName || ''}`}
+                    >
+                      <div className="flex items-center justify-between gap-1 overflow-hidden">
+                        <span className="truncate" title={col.label}>
+                          {col.label}
+                        </span>
+                      </div>
+
+                      {/* Resizer Handle */}
+                      <div
+                        onMouseDown={e => handleStartResize(e, col.key)}
+                        onDoubleClick={() => handleResetSingleCol(col.key)}
+                        title="Drag to resize column (Double-click to reset)"
+                        className={`absolute right-0 top-0 bottom-0 w-2 cursor-col-resize select-none flex items-center justify-center transition-colors z-20 ${
+                          isResizingThis
+                            ? 'bg-indigo-600 text-white'
+                            : 'hover:bg-indigo-400/80 active:bg-indigo-600'
+                        }`}
+                      >
+                        <div
+                          className={`w-0.5 h-3.5 rounded-full ${
+                            isResizingThis ? 'bg-white' : 'bg-slate-300 group-hover:bg-indigo-200'
+                          }`}
+                        />
+                      </div>
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
+
             <tbody className="text-xs font-mono divide-y divide-slate-100">
               {filteredRows.map((row, idx) => {
                 const isEditing = editingRowId === row.id;
@@ -150,40 +333,41 @@ export function CsvTablePreview({ rows, onUpdateRow, onRemoveRow }: Props) {
                         : 'bg-white'
                     }`}
                   >
-                    <td className="px-3 py-2.5 text-center text-slate-400 text-[11px] font-sans">
+                    {/* Index */}
+                    <td className="px-3 py-2.5 text-center text-slate-400 text-[11px] font-sans overflow-hidden truncate">
                       {idx + 1}
                     </td>
 
                     {/* Input Part reference */}
-                    <td className="px-3 py-2.5 font-sans font-semibold text-slate-800">
-                      <div className="flex items-center gap-1.5">
-                        <span>{row.inputPart}</span>
+                    <td className="px-3 py-2.5 font-sans font-semibold text-slate-800 overflow-hidden">
+                      <div className="flex items-center gap-1.5 truncate">
+                        <span className="truncate">{row.inputPart}</span>
                         {row.matchedClass && (
-                          <span className="text-[9px] font-semibold uppercase bg-slate-100 text-slate-500 px-1 py-0.2 rounded font-sans">
+                          <span className="text-[9px] font-semibold uppercase bg-slate-100 text-slate-500 px-1 py-0.2 rounded font-sans shrink-0">
                             {row.matchedClass}
                           </span>
                         )}
                       </div>
                     </td>
 
-                    {/* quantity (Placed next to Input Part) */}
-                    <td className="px-3 py-2.5 font-bold text-slate-800 bg-slate-50/50">
+                    {/* quantity */}
+                    <td className="px-3 py-2.5 font-bold text-slate-800 bg-slate-50/50 overflow-hidden">
                       <input
                         type="number"
                         value={row.quantity}
                         onChange={e => onUpdateRow(row.id, 'quantity', e.target.value)}
-                        className="w-16 bg-white hover:bg-white focus:bg-white border border-slate-200 hover:border-slate-300 focus:border-indigo-400 rounded px-1.5 py-0.5 text-xs font-mono font-bold text-slate-800 transition-colors shadow-2xs"
+                        className="w-full max-w-[85px] bg-white hover:bg-white focus:bg-white border border-slate-200 hover:border-slate-300 focus:border-indigo-400 rounded px-1.5 py-0.5 text-xs font-mono font-bold text-slate-800 transition-colors shadow-2xs"
                       />
                     </td>
 
                     {/* subsidiary_id */}
-                    <td className="px-3 py-2.5 font-bold text-indigo-600 bg-indigo-50/30">
+                    <td className="px-3 py-2.5 font-bold text-indigo-600 bg-indigo-50/30 overflow-hidden truncate">
                       {isEditing ? (
                         <input
                           type="text"
                           value={row.subsidiary_id}
                           onChange={e => onUpdateRow(row.id, 'subsidiary_id', e.target.value)}
-                          className="w-12 bg-white border border-indigo-300 rounded px-1 py-0.5 text-xs font-mono font-bold"
+                          className="w-full bg-white border border-indigo-300 rounded px-1 py-0.5 text-xs font-mono font-bold"
                         />
                       ) : (
                         row.subsidiary_id
@@ -191,7 +375,7 @@ export function CsvTablePreview({ rows, onUpdateRow, onRemoveRow }: Props) {
                     </td>
 
                     {/* item_id (Internal ID) */}
-                    <td className="px-3 py-2.5 font-bold bg-indigo-50/30">
+                    <td className="px-3 py-2.5 font-bold bg-indigo-50/30 overflow-hidden truncate">
                       {isEditing ? (
                         <input
                           type="text"
@@ -202,7 +386,7 @@ export function CsvTablePreview({ rows, onUpdateRow, onRemoveRow }: Props) {
                               onUpdateRow(row.id, 'status', 'manual');
                             }
                           }}
-                          className="w-20 bg-white border border-indigo-300 rounded px-1.5 py-0.5 text-xs font-mono font-bold text-indigo-800"
+                          className="w-full bg-white border border-indigo-300 rounded px-1.5 py-0.5 text-xs font-mono font-bold text-indigo-800"
                         />
                       ) : row.status === 'not_found' ? (
                         <span className="inline-flex items-center gap-1 text-amber-700 bg-amber-100/80 px-2 py-0.5 rounded text-[11px] font-sans font-bold">
@@ -217,13 +401,13 @@ export function CsvTablePreview({ rows, onUpdateRow, onRemoveRow }: Props) {
                     </td>
 
                     {/* location */}
-                    <td className="px-3 py-2.5 text-slate-700">
+                    <td className="px-3 py-2.5 text-slate-700 overflow-hidden truncate">
                       {isEditing ? (
                         <input
                           type="text"
                           value={row.location}
                           onChange={e => onUpdateRow(row.id, 'location', e.target.value)}
-                          className="w-12 bg-white border border-slate-300 rounded px-1 py-0.5 text-xs font-mono"
+                          className="w-full bg-white border border-slate-300 rounded px-1 py-0.5 text-xs font-mono"
                         />
                       ) : (
                         row.location
@@ -231,13 +415,13 @@ export function CsvTablePreview({ rows, onUpdateRow, onRemoveRow }: Props) {
                     </td>
 
                     {/* start_date */}
-                    <td className="px-3 py-2.5 text-slate-600 whitespace-nowrap">
+                    <td className="px-3 py-2.5 text-slate-600 whitespace-nowrap overflow-hidden truncate">
                       {isEditing ? (
                         <input
                           type="text"
                           value={row.start_date}
                           onChange={e => onUpdateRow(row.id, 'start_date', e.target.value)}
-                          className="w-24 bg-white border border-slate-300 rounded px-1 py-0.5 text-xs font-mono"
+                          className="w-full bg-white border border-slate-300 rounded px-1 py-0.5 text-xs font-mono"
                         />
                       ) : (
                         row.start_date
@@ -245,13 +429,13 @@ export function CsvTablePreview({ rows, onUpdateRow, onRemoveRow }: Props) {
                     </td>
 
                     {/* end_date */}
-                    <td className="px-3 py-2.5 text-slate-600 whitespace-nowrap">
+                    <td className="px-3 py-2.5 text-slate-600 whitespace-nowrap overflow-hidden truncate">
                       {isEditing ? (
                         <input
                           type="text"
                           value={row.end_date}
                           onChange={e => onUpdateRow(row.id, 'end_date', e.target.value)}
-                          className="w-24 bg-white border border-slate-300 rounded px-1 py-0.5 text-xs font-mono"
+                          className="w-full bg-white border border-slate-300 rounded px-1 py-0.5 text-xs font-mono"
                         />
                       ) : (
                         row.end_date
@@ -259,17 +443,17 @@ export function CsvTablePreview({ rows, onUpdateRow, onRemoveRow }: Props) {
                     </td>
 
                     {/* memo */}
-                    <td className="px-3 py-2.5 text-slate-500 italic max-w-xs truncate">
+                    <td className="px-3 py-2.5 text-slate-500 italic overflow-hidden">
                       <input
                         type="text"
                         value={row.memo}
                         onChange={e => onUpdateRow(row.id, 'memo', e.target.value)}
-                        className="w-full bg-transparent hover:bg-white focus:bg-white border border-transparent hover:border-slate-300 focus:border-indigo-400 rounded px-1.5 py-0.5 text-xs text-slate-700 italic transition-colors"
+                        className="w-full bg-transparent hover:bg-white focus:bg-white border border-transparent hover:border-slate-300 focus:border-indigo-400 rounded px-1.5 py-0.5 text-xs text-slate-700 italic transition-colors truncate"
                       />
                     </td>
 
                     {/* Status / Quick Action */}
-                    <td className="px-3 py-2.5 text-right font-sans">
+                    <td className="px-3 py-2.5 text-right font-sans overflow-hidden">
                       <div className="flex items-center justify-end gap-1.5">
                         {row.status === 'matched' ? (
                           <span className="text-[10px] font-bold text-green-700 bg-green-50 border border-green-200 px-1.5 py-0.5 rounded flex items-center gap-1">
@@ -290,7 +474,7 @@ export function CsvTablePreview({ rows, onUpdateRow, onRemoveRow }: Props) {
                           type="button"
                           onClick={() => setEditingRowId(isEditing ? null : row.id)}
                           title={isEditing ? 'Done Editing' : 'Edit Row Values'}
-                          className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors cursor-pointer"
+                          className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors cursor-pointer shrink-0"
                         >
                           {isEditing ? (
                             <Check className="w-3.5 h-3.5 text-indigo-600 font-bold" />
@@ -309,7 +493,7 @@ export function CsvTablePreview({ rows, onUpdateRow, onRemoveRow }: Props) {
       </div>
 
       {/* Footer Info Bar */}
-      <div className="p-3 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
+      <div className="p-3 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs select-none">
         <div className="flex items-center gap-4 text-[11px] text-slate-500 font-medium">
           <div className="flex items-center gap-1.5">
             <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
@@ -322,7 +506,7 @@ export function CsvTablePreview({ rows, onUpdateRow, onRemoveRow }: Props) {
         </div>
 
         <div className="text-[11px] text-slate-400 font-sans">
-          Format: <code className="text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded font-mono">subsidiary_id,item_id,location,start_date,end_date,quantity,memo</code>
+          Tip: Drag column edges to resize. Double-click to auto-reset.
         </div>
       </div>
     </div>

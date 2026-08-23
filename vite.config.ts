@@ -5,7 +5,7 @@ import {defineConfig} from 'vite';
 
 export default defineConfig(({ mode }) => {
   return {
-    base: mode === 'development' ? '/' : './',
+    base: mode === 'development' ? '/' : '/CSV-Upload-Tool/',
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {

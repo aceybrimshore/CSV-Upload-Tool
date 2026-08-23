@@ -46,17 +46,37 @@ export default function App() {
   const [copied, setCopied] = useState<boolean>(false);
   const [isCatalogOpen, setIsCatalogOpen] = useState<boolean>(false);
 
-  // Exporter Configuration defaults matching user specification
-  const [config, setConfig] = useState<ExporterConfig>({
-    subsidiary_id: '7',
-    location: '25',
-    start_date: '28/08/2026',
-    end_date: '28/08/2026',
-    default_quantity: 100,
-    memo: 'W34 - CSO TU',
-    delimiter: 'comma',
-    includeHeader: true
+  // Exporter Configuration defaults matching user specification with localStorage persistence
+  const [config, setConfig] = useState<ExporterConfig>(() => {
+    const defaultConfig: ExporterConfig = {
+      subsidiary_id: '7',
+      location: '25',
+      start_date: '28/08/2026',
+      end_date: '28/08/2026',
+      default_quantity: 100,
+      memo: 'W34 - CSO TU',
+      delimiter: 'comma',
+      includeHeader: true
+    };
+    try {
+      const saved = localStorage.getItem('csv_exporter_config_v2');
+      if (saved) {
+        return { ...defaultConfig, ...JSON.parse(saved) };
+      }
+    } catch (e) {
+      console.warn('Failed to load saved config', e);
+    }
+    return defaultConfig;
   });
+
+  // Save config changes to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem('csv_exporter_config_v2', JSON.stringify(config));
+    } catch (e) {
+      console.warn('Failed to save config to localStorage', e);
+    }
+  }, [config]);
 
   // Manual row overrides if user manually edits on table
   const [manualOverrides, setManualOverrides] = useState<Record<string, Partial<ExportRow>>>({});

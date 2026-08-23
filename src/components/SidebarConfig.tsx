@@ -1,5 +1,5 @@
 import { useState, Dispatch, SetStateAction } from 'react';
-import { PartItem, ExportRow, ExporterConfig, CatalogMetadata } from '../types';
+import { PartItem, ExportRow, ExporterConfig, CatalogMetadata, LOCATION_PRESETS, LocationPreset } from '../types';
 import { DateWidget } from './DateWidget';
 import {
   Download,
@@ -17,7 +17,8 @@ import {
   Edit2,
   HardDrive,
   CheckCircle2,
-  Calendar
+  Calendar,
+  MapPin
 } from 'lucide-react';
 
 interface Props {
@@ -109,30 +110,93 @@ export function SidebarConfig({
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-[11px] font-bold text-slate-600 mb-1 uppercase tracking-wider">
-                Subsidiary ID
+          {/* Location & Site Preset Auto-Fill */}
+          <div className="bg-slate-50/80 p-3 rounded-lg border border-slate-200/90 flex flex-col gap-2.5">
+            <div className="flex items-center justify-between">
+              <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                <MapPin className="w-3.5 h-3.5 text-indigo-600" />
+                <span>Location Preset</span>
               </label>
-              <input
-                type="text"
-                value={config.subsidiary_id}
-                onChange={e => handleInputChange('subsidiary_id', e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded p-2 text-xs font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none"
-                placeholder="7"
-              />
+              {(() => {
+                const active = LOCATION_PRESETS.find(
+                  p => p.subsidiary_id === config.subsidiary_id && p.location === config.location
+                );
+                return active ? (
+                  <span className="text-[10px] font-bold bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-full border border-indigo-200 flex items-center gap-1">
+                    <Check className="w-2.5 h-2.5" />
+                    {active.name}
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-semibold bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full">
+                    Custom ID
+                  </span>
+                );
+              })()}
             </div>
-            <div>
-              <label className="block text-[11px] font-bold text-slate-600 mb-1 uppercase tracking-wider">
-                Location ID
-              </label>
-              <input
-                type="text"
-                value={config.location}
-                onChange={e => handleInputChange('location', e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded p-2 text-xs font-semibold text-slate-800 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none"
-                placeholder="25"
-              />
+
+            {/* Quick Auto-Fill Chips */}
+            <div className="grid grid-cols-3 gap-1.5">
+              {LOCATION_PRESETS.map(preset => {
+                const isSelected =
+                  config.subsidiary_id === preset.subsidiary_id &&
+                  config.location === preset.location;
+
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => {
+                      setConfig(prev => ({
+                        ...prev,
+                        subsidiary_id: preset.subsidiary_id,
+                        location: preset.location
+                      }));
+                    }}
+                    className={`px-2 py-1.5 rounded-md text-left transition-all cursor-pointer flex flex-col border text-xs ${
+                      isSelected
+                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs font-bold'
+                        : 'bg-white text-slate-700 border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/40 font-medium'
+                    }`}
+                  >
+                    <span className="truncate leading-tight">{preset.name}</span>
+                    <span
+                      className={`text-[9.5px] font-mono mt-0.5 ${
+                        isSelected ? 'text-indigo-100' : 'text-slate-500'
+                      }`}
+                    >
+                      Sub {preset.subsidiary_id} · Loc {preset.location}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Direct Input Fields */}
+            <div className="grid grid-cols-2 gap-2.5 pt-1">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">
+                  Subsidiary ID
+                </label>
+                <input
+                  type="text"
+                  value={config.subsidiary_id}
+                  onChange={e => handleInputChange('subsidiary_id', e.target.value)}
+                  className="w-full bg-white border border-slate-200 rounded p-2 text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none shadow-2xs"
+                  placeholder="7"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">
+                  Location ID
+                </label>
+                <input
+                  type="text"
+                  value={config.location}
+                  onChange={e => handleInputChange('location', e.target.value)}
+                  className="w-full bg-white border border-slate-200 rounded p-2 text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none shadow-2xs"
+                  placeholder="25"
+                />
+              </div>
             </div>
           </div>
 

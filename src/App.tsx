@@ -180,8 +180,60 @@ export default function App() {
     });
   };
 
-  const handleRemoveRow = (id: string) => {
-    // optional remove row
+  const handleDuplicateRow = (row: ExportRow, index: number) => {
+    const lines = rawInput.split(/\r?\n/);
+    let nonEmptyCount = -1;
+    let targetLineIndex = -1;
+
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].trim()) {
+        nonEmptyCount++;
+        if (nonEmptyCount === index) {
+          targetLineIndex = i;
+          break;
+        }
+      }
+    }
+
+    // Determine duplicated line content
+    let duplicatedLineText = '';
+    if (targetLineIndex !== -1 && lines[targetLineIndex].trim()) {
+      duplicatedLineText = lines[targetLineIndex].trim();
+    } else {
+      duplicatedLineText = row.quantity && row.quantity !== config.default_quantity
+        ? `${row.inputPart}\t${row.quantity}`
+        : row.inputPart;
+    }
+
+    if (targetLineIndex !== -1) {
+      const newLines = [...lines];
+      newLines.splice(targetLineIndex + 1, 0, duplicatedLineText);
+      setRawInput(newLines.join('\n'));
+    } else {
+      setRawInput(prev => (prev.trim() ? `${prev}\n${duplicatedLineText}` : duplicatedLineText));
+    }
+  };
+
+  const handleRemoveRow = (index: number) => {
+    const lines = rawInput.split(/\r?\n/);
+    let nonEmptyCount = -1;
+    let targetLineIndex = -1;
+
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].trim()) {
+        nonEmptyCount++;
+        if (nonEmptyCount === index) {
+          targetLineIndex = i;
+          break;
+        }
+      }
+    }
+
+    if (targetLineIndex !== -1) {
+      const newLines = [...lines];
+      newLines.splice(targetLineIndex, 1);
+      setRawInput(newLines.join('\n'));
+    }
   };
 
   // Generate CSV / TSV text formatted exactly as user requested
@@ -413,6 +465,7 @@ export default function App() {
         <CsvTablePreview
           rows={rows}
           onUpdateRow={handleUpdateRow}
+          onDuplicateRow={handleDuplicateRow}
           onRemoveRow={handleRemoveRow}
         />
       </main>
